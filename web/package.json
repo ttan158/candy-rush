@@ -10,8 +10,10 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@mapbox/search-js-react": "^1.5.0",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.7",
+    "mapbox-gl": "^3.16.0",
     "next": "16.0.1",
     "postgres": "^3.4.7",
     "react": "19.2.0",
