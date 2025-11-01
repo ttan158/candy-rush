@@ -13,6 +13,7 @@ const DEFAULT_ZOOM: number = 15;
 interface MapViewProps {
   center?: LngLat;
   zoom?: number;
+  showCenterMarker?: boolean; // show blue center marker only when true
   candies?: Array<{
     id: string;
     coord: LngLat;
@@ -30,6 +31,7 @@ interface MapViewProps {
 export default function MapView({
   center,
   zoom,
+  showCenterMarker,
   candies,
   routePath,
   routeStops,
@@ -111,12 +113,14 @@ export default function MapView({
       if (latestCenterRef.current) {
         const c = latestCenterRef.current;
         map.flyTo({ center: c, zoom: zoom ?? map.getZoom(), essential: true });
-        if (!markerRef.current) {
-          markerRef.current = new mapboxgl.Marker({ color: "#5500FF" })
-            .setLngLat(c)
-            .addTo(map);
-        } else {
-          markerRef.current.setLngLat(c);
+        if (showCenterMarker) {
+          if (!markerRef.current) {
+            markerRef.current = new mapboxgl.Marker({ color: "#5500FF" })
+              .setLngLat(c)
+              .addTo(map);
+          } else {
+            markerRef.current.setLngLat(c);
+          }
         }
       } else if (
         !center &&
@@ -173,13 +177,13 @@ export default function MapView({
     }
   }, [center, zoom]);
 
-  // Create or update a marker whenever center changes
+  // Create or update a marker whenever center/showCenterMarker changes
   useEffect(() => {
     const map = mapRef.current;
     const mapboxgl = mapboxRef.current;
     if (!map || !mapboxgl) return;
 
-    if (center) {
+    if (center && showCenterMarker) {
       if (!markerRef.current) {
         markerRef.current = new mapboxgl.Marker({ color: "#5500FF" })
           .setLngLat(center)
@@ -193,7 +197,7 @@ export default function MapView({
       } catch {}
       markerRef.current = null;
     }
-  }, [center]);
+  }, [center, showCenterMarker]);
 
   // Render reusable candy markers when map is ready
   const map = mapRef.current;
@@ -365,7 +369,11 @@ export default function MapView({
               const m = typeMeta.get(key) ?? { latestISO: undefined, count: 0 };
               m.count += 1;
               if (!m.latestISO) m.latestISO = iso;
-              else if (iso && new Date(iso).getTime() > new Date(m.latestISO).getTime()) m.latestISO = iso;
+              else if (
+                iso &&
+                new Date(iso).getTime() > new Date(m.latestISO).getTime()
+              )
+                m.latestISO = iso;
               typeMeta.set(key, m);
             });
           });
@@ -383,10 +391,16 @@ export default function MapView({
             toShow
               .map(([t, meta]) => {
                 const when = meta.latestISO ? fmtTime(meta.latestISO) : "";
-                return `<div style=\"font-size:12px;line-height:1.3;margin:4px 0;\">`
-                  + `<div style=\"font-weight:600;\">${t}</div>`
-                  + `${when ? `<div style=\"font-size:11px;opacity:.75;\">${when}</div>` : ""}`
-                  + `</div>`;
+                return (
+                  `<div style=\"font-size:12px;line-height:1.3;margin:4px 0;\">` +
+                  `<div style=\"font-weight:600;\">${t}</div>` +
+                  `${
+                    when
+                      ? `<div style=\"font-size:11px;opacity:.75;\">${when}</div>`
+                      : ""
+                  }` +
+                  `</div>`
+                );
               })
               .join("") +
             (sortedTypes.length > toShow.length

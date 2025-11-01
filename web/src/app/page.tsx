@@ -390,12 +390,14 @@ export default function Home() {
       </aside>
 
       <main className="flex h-screen flex-1">
-        <MapView
-          center={filterCenter}
-          candies={candies}
-          routePath={routePath}
-          routeStops={routeWaypoints}
-        />
+          <MapView
+            center={filterCenter}
+            zoom={undefined}
+            showCenterMarker={centerMode === "address"}
+            candies={candies}
+            routePath={routePath}
+            routeStops={routeWaypoints}
+          />
       </main>
     </div>
   );
