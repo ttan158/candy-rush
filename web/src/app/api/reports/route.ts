@@ -96,13 +96,16 @@ export async function GET() {
       latitude: houses.latitude,
       longitude: houses.longitude,
       address: houses.address,
+      reportedAt: reports.createdAt,
+      reporter: calls.callerNumber,
       candyNames: sql`ARRAY_AGG(candies.name)`,
     })
     .from(reports)
     .leftJoin(houses, eq(reports.houseId, houses.id))
+    .leftJoin(calls, eq(reports.callId, calls.id))
     .leftJoin(reportCandies, eq(reportCandies.reportId, reports.id))
     .leftJoin(candies, eq(reportCandies.candyId, candies.id))
-    .groupBy(reports.id, houses.id);
+    .groupBy(reports.id, houses.id, calls.callerNumber, reports.createdAt);
 
   return NextResponse.json(results);
 }

@@ -42,12 +42,14 @@ export default function ClusterMarker({
     el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.25)";
     el.style.userSelect = "none";
     el.style.cursor = "pointer";
+    el.style.zIndex = "2";
+    el.style.pointerEvents = "auto";
     el.textContent = String(count);
 
     const marker = new mapboxgl.Marker({ element: el }).setLngLat(coord);
 
     const popupContent = `
-      <div style="min-width:160px;">
+      <div style="min-width:160px;color:#111;">
         <div style="font-weight:600;margin-bottom:4px;">${
           title ?? "Candy"
         } (${count})</div>
@@ -80,7 +82,7 @@ export default function ClusterMarker({
       markerRef.current
         ?.getPopup()
         ?.setHTML(
-          `<div style="min-width:160px;"><div style="font-weight:600;margin-bottom:4px;">${
+          `<div style="min-width:160px;color:#111;"><div style="font-weight:600;margin-bottom:6px;">${
             title ?? "Candy"
           } (${count})</div>${detailsHtml ?? ""}</div>`
         );

@@ -10,6 +10,9 @@ export interface CandyMarkerProps {
   coord: LngLat; // [lng, lat]
   title?: string;
   address?: string;
+  candyNames?: string[];
+  reportedAt?: string; // ISO string
+  reporter?: string;
   iconUrl?: string; // overrides candyType; when omitted, derived from candyType
   candyType?: string; // resolves to "/<type>.png", falls back to "/candy.png"
   size?: number; // px, default 64
@@ -22,6 +25,9 @@ export default function CandyMarker({
   coord,
   title,
   address,
+  candyNames,
+  reportedAt,
+  reporter,
   iconUrl,
   candyType,
   size = 64,
@@ -58,11 +64,38 @@ export default function CandyMarker({
 
     const marker = new mapboxgl.Marker({ element: el }).setLngLat(coord);
 
+    const fmtTime = (iso?: string) => {
+      if (!iso) return "";
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString();
+      } catch {
+        return iso;
+      }
+    };
+
     if (popup) {
       const p = new mapboxgl.Popup({ offset: 25 }).setHTML(
-        `<div style="font-weight:600;margin-bottom:4px;">${
-          title ?? "Candy"
-        }</div><div style="font-size:12px;opacity:0.8;">${address ?? ""}</div>`
+        `<div style="color:#111;">
+           <div style="font-weight:600;margin-bottom:6px;">${
+             candyNames && candyNames.length
+               ? candyNames.join(", ")
+               : title ?? "Candy"
+           }</div>
+           ${
+             address
+               ? `<div style="font-size:12px;opacity:.8;margin-bottom:4px;">${address}</div>`
+               : ""
+           }
+           <div style="font-size:12px;opacity:.8;">
+             ${reporter ? `Reported by: <strong>${reporter}</strong>` : ""}
+             ${
+               reportedAt
+                 ? `${reporter ? " · " : ""}Time: ${fmtTime(reportedAt)}`
+                 : ""
+             }
+           </div>
+         </div>`
       );
       marker.setPopup(p);
     }
@@ -101,17 +134,39 @@ export default function CandyMarker({
   useEffect(() => {
     if (!markerRef.current || !popup) return;
     try {
-      markerRef.current
-        .getPopup()
-        ?.setHTML(
-          `<div style="font-weight:600;margin-bottom:4px;">${
-            title ?? "Candy"
-          }</div><div style="font-size:12px;opacity:0.8;">${
-            address ?? ""
-          }</div>`
-        );
+      const fmtTime = (iso?: string) => {
+        if (!iso) return "";
+        try {
+          const d = new Date(iso);
+          return d.toLocaleString();
+        } catch {
+          return iso;
+        }
+      };
+      markerRef.current.getPopup()?.setHTML(
+        `<div style="color:#111;">
+           <div style="font-weight:600;margin-bottom:6px;">${
+             candyNames && candyNames.length
+               ? candyNames.join(", ")
+               : title ?? "Candy"
+           }</div>
+           ${
+             address
+               ? `<div style="font-size:12px;opacity:.8;margin-bottom:4px;">${address}</div>`
+               : ""
+           }
+           <div style="font-size:12px;opacity:.8;">
+             ${reporter ? `Reported by: <strong>${reporter}</strong>` : ""}
+             ${
+               reportedAt
+                 ? `${reporter ? " · " : ""}Time: ${fmtTime(reportedAt)}`
+                 : ""
+             }
+           </div>
+         </div>`
+      );
     } catch {}
-  }, [title, address, popup]);
+  }, [title, address, popup, candyNames, reportedAt, reporter]);
 
   // Update icon or size dynamically
   useEffect(() => {

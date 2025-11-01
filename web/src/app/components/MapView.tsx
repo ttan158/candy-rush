@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "mapbox-gl/dist/mapbox-gl.css";
 import CandyMarker from "./CandyMarker";
 import ClusterMarker from "./ClusterMarker";
+import StopMarker from "./StopMarker";
 
 type LngLat = [number, number];
 const DEFAULT_CENTER: LngLat = [174.768838, -36.846611];
@@ -18,10 +19,21 @@ interface MapViewProps {
     title?: string;
     address?: string;
     candyType?: string;
+    candyNames?: string[];
+    reportedAt?: string;
+    reporter?: string;
   }>;
+  routePath?: LngLat[];
+  routeStops?: LngLat[]; // ordered waypoints (center + stops)
 }
 
-export default function MapView({ center, zoom, candies }: MapViewProps) {
+export default function MapView({
+  center,
+  zoom,
+  candies,
+  routePath,
+  routeStops,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const mapboxRef = useRef<any>(null);
@@ -187,28 +199,132 @@ export default function MapView({ center, zoom, candies }: MapViewProps) {
   const map = mapRef.current;
   const mapboxgl = mapboxRef.current;
 
-  // Group candies by identical coordinates
+  // Group candies by exact coordinates; fallback to grouping by normalized address
+  // This ensures multiple reports at the same house cluster reliably, even if the
+  // backend emits multiple rows for the same location.
   const grouped = useMemo(() => {
-    const groups = new Map<
-      string,
-      { coord: LngLat; items: NonNullable<typeof candies>[number][] }
-    >();
+    type Item = NonNullable<typeof candies>[number];
+    const byKey = new Map<string, { coord: LngLat; items: Item[] }>();
+    const norm = (s?: string) => (s ?? "").trim().toLowerCase();
+
     (candies ?? []).forEach((c) => {
-      const key = `${c.coord[0].toFixed(6)},${c.coord[1].toFixed(6)}`;
-      if (!groups.has(key)) groups.set(key, { coord: c.coord, items: [c] });
-      else groups.get(key)!.items.push(c);
+      const coordKey = `${c.coord[0]},${c.coord[1]}`; // exact match
+      const addressKey = c.address ? `addr:${norm(c.address)}` : undefined;
+
+      // Prefer existing address group, then exact coord group, else create new by address or coord
+      let key: string | undefined = undefined;
+      if (addressKey && byKey.has(addressKey)) key = addressKey;
+      else if (byKey.has(coordKey)) key = coordKey;
+      else key = addressKey ?? coordKey;
+
+      const group = byKey.get(key);
+      if (!group) byKey.set(key, { coord: c.coord, items: [c] });
+      else group.items.push(c);
     });
-    return Array.from(groups.values());
+
+    return Array.from(byKey.values());
   }, [candies]);
 
   return (
     <>
       <div ref={containerRef} className="h-full w-full" />
+      {/* Render route path as a line layer when available */}
+      {mapReady &&
+        map &&
+        routePath &&
+        routePath.length >= 2 &&
+        (() => {
+          try {
+            const sourceId = "route-path";
+            const layerId = "route-path-line";
+            const hasSource = !!map.getSource?.(sourceId);
+            if (!hasSource) {
+              map.addSource(sourceId, {
+                type: "geojson",
+                data: {
+                  type: "Feature",
+                  geometry: { type: "LineString", coordinates: routePath },
+                  properties: {},
+                },
+              });
+            } else {
+              const src: any = map.getSource(sourceId);
+              src?.setData({
+                type: "Feature",
+                geometry: { type: "LineString", coordinates: routePath },
+                properties: {},
+              });
+            }
+            const hasLayer = !!map.getLayer?.(layerId);
+            if (!hasLayer) {
+              map.addLayer({
+                id: layerId,
+                type: "line",
+                source: sourceId,
+                layout: { "line-join": "round", "line-cap": "round" },
+                paint: {
+                  "line-color": "#0ea5e9",
+                  "line-width": 4,
+                  "line-opacity": 0.85,
+                },
+              });
+            }
+          } catch {}
+          return null;
+        })()}
+      {mapReady && map && mapboxgl && routeStops && routeStops.length > 1 && (
+        // Render numeric badges for each stop (excluding the initial center at index 0)
+        <>
+          {routeStops.slice(1).map((coord, idx) => (
+            <StopMarker
+              key={`stop-${idx + 1}-${coord[0]}-${coord[1]}`}
+              map={map}
+              mapboxgl={mapboxgl}
+              coord={coord}
+              index={idx + 1}
+              size={28}
+            />
+          ))}
+        </>
+      )}
       {mapReady &&
         map &&
         mapboxgl &&
         grouped.map((g) => {
-          if (g.items.length === 1) {
+          // Determine unique candy types across all reports at this location
+          const typeSet = new Set<string>();
+          g.items.forEach((it) => {
+            (it.candyNames ?? []).forEach((nm) => {
+              const key = String(nm).trim();
+              if (key) typeSet.add(key);
+            });
+          });
+          const uniqueTypes = Array.from(typeSet);
+
+          if (uniqueTypes.length === 1) {
+            // Single type at this location -> show a single CandyMarker with that type
+            const onlyType = uniqueTypes[0]!;
+            const first = g.items[0]!;
+            const slug = onlyType.toLowerCase().replace(/\s+/g, "-");
+            return (
+              <CandyMarker
+                key={`single-${g.coord[0]}-${g.coord[1]}-${slug}`}
+                map={map}
+                mapboxgl={mapboxgl}
+                coord={g.coord}
+                title={onlyType}
+                address={first.address}
+                candyType={slug}
+                candyNames={[onlyType]}
+                reportedAt={first.reportedAt}
+                reporter={first.reporter}
+                size={64}
+              />
+            );
+          }
+
+          if (uniqueTypes.length === 0 && g.items.length === 1) {
+            // Fallback: no type info but only one report -> show its marker
             const c = g.items[0]!;
             return (
               <CandyMarker
@@ -219,33 +335,77 @@ export default function MapView({ center, zoom, candies }: MapViewProps) {
                 title={c.title}
                 address={c.address}
                 candyType={c.candyType}
+                candyNames={c.candyNames}
+                reportedAt={c.reportedAt}
+                reporter={c.reporter}
                 size={64}
               />
             );
           }
-          const details = g.items
-            .slice(0, 6)
-            .map(
-              (it) =>
-                `<div style="font-size:12px;line-height:1.2;margin:2px 0;">${
-                  it.title ?? "Candy"
-                }</div>`
-            )
-            .join("");
-          const remaining = g.items.length - 6;
+
+          // Multiple different types at this location -> cluster marker
+          // For each type, show latest report time
+          const fmtTime = (iso?: string) => {
+            if (!iso) return "";
+            try {
+              const d = new Date(iso);
+              return d.toLocaleString();
+            } catch {
+              return iso as string;
+            }
+          };
+
+          type TypeMeta = { latestISO?: string; count: number };
+          const typeMeta = new Map<string, TypeMeta>();
+          g.items.forEach((it) => {
+            const iso = it.reportedAt;
+            (it.candyNames ?? []).forEach((nm) => {
+              const key = String(nm).trim();
+              if (!key) return;
+              const m = typeMeta.get(key) ?? { latestISO: undefined, count: 0 };
+              m.count += 1;
+              if (!m.latestISO) m.latestISO = iso;
+              else if (iso && new Date(iso).getTime() > new Date(m.latestISO).getTime()) m.latestISO = iso;
+              typeMeta.set(key, m);
+            });
+          });
+
+          // Sort by latest time desc, fallback to name
+          const sortedTypes = Array.from(typeMeta.entries()).sort((a, b) => {
+            const ta = a[1].latestISO ? new Date(a[1].latestISO).getTime() : 0;
+            const tb = b[1].latestISO ? new Date(b[1].latestISO).getTime() : 0;
+            if (tb !== ta) return tb - ta;
+            return a[0].localeCompare(b[0]);
+          });
+
+          const toShow = sortedTypes.slice(0, 8);
           const detailsHtml =
-            details +
-            (remaining > 0
-              ? `<div style=\"opacity:.7;font-size:12px;\">+${remaining} more</div>`
+            toShow
+              .map(([t, meta]) => {
+                const when = meta.latestISO ? fmtTime(meta.latestISO) : "";
+                return `<div style=\"font-size:12px;line-height:1.3;margin:4px 0;\">`
+                  + `<div style=\"font-weight:600;\">${t}</div>`
+                  + `${when ? `<div style=\"font-size:11px;opacity:.75;\">${when}</div>` : ""}`
+                  + `</div>`;
+              })
+              .join("") +
+            (sortedTypes.length > toShow.length
+              ? `<div style=\"opacity:.7;font-size:12px;\">+${
+                  sortedTypes.length - toShow.length
+                } more</div>`
               : "");
+
           return (
             <ClusterMarker
-              key={`${g.coord[0]}-${g.coord[1]}`}
+              key={`cluster-${g.coord[0]}-${g.coord[1]}-${uniqueTypes
+                .map((t) => t.toLowerCase())
+                .sort()
+                .join("_")}`}
               map={map}
               mapboxgl={mapboxgl}
               coord={g.coord}
-              count={g.items.length}
-              title="Candies"
+              count={uniqueTypes.length}
+              title="Candy types"
               detailsHtml={detailsHtml}
               size={40}
             />
